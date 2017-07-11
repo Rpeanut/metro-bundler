@@ -157,12 +157,15 @@ class Bundler {
   _projectRoots: $ReadOnlyArray<string>;
   _assetServer: AssetServer;
   _getTransformOptions: void | GetTransformOptions;
+  _startModuleId: number;
+  _extenalModules: ?Object;
 
   constructor(opts: Options) {
     this._opts = opts;
 
     opts.projectRoots.forEach(verifyRootExists);
-
+    // peanut opts 无法传入command，目前先采用这种
+    const options = process.argv;
     const transformModuleStr = fs.readFileSync(opts.transformModulePath);
     const transformModuleHash =
       crypto.createHash('sha1').update(transformModuleStr).digest('hex');
@@ -178,8 +181,21 @@ class Bundler {
       stableProjectRoots.join(',').split(pathSeparator).join('-'),
       transformModuleHash,
     ];
-
-    this._getModuleId = createModuleIdFactory();
+    const manifestIndex = options.indexOf('--manifest-file') + 1;
+    const businessIndex = options.indexOf('--start-id') + 1;
+    if (manifestIndex) {
+      const file = options[manifestIndex];
+      const result = JSON.parse(fs.readFileSync(file));
+      this._startModuleId = result ? (1 + result.lastId) : 0;
+      this._extenalModules = result ? result.modules : null;
+    } else {
+      this._startModuleId = 0;
+      this._extenalModules = null;
+    }
+    if (businessIndex) {
+      this._businessId =  Number(options[businessIndex]);
+    }
+    this._getModuleId = createModuleIdFactory.call(this);
 
     let getCacheKey = (options: mixed) => '';
     if (opts.transformModulePath) {
@@ -386,7 +402,9 @@ class Bundler {
       modulesByName: {[name: string]: Module},
     }) =>
       this._resolverPromise.then(resolver => Promise.all(
-        transformedModules.map(({module, transformed}) =>
+        transformedModules.filter(({module, transformed}) =>                      !this._extenalModules || (transformed.name &&
+          !transformed.isPolyfill && !this._extenalModules[transformed.name]))
+        .map(({module, transformed}) =>
           finalBundle.addModule(resolver, response, module, transformed)
         )
       )).then(() => {
@@ -600,7 +618,7 @@ class Bundler {
       {dev, platform, recursive},
       bundlingOptions,
       onProgress,
-      isolateModuleIDs ? createModuleIdFactory() : this._getModuleId,
+      isolateModuleIDs ? createModuleIdFactory.call(this) : this._getModuleId,
     );
     return response;
   }
@@ -845,11 +863,18 @@ function verifyRootExists(root) {
 }
 
 function createModuleIdFactory() {
+  // peanut 在createModuleId时要保持其require时正确的依赖关系
   const fileToIdMap = Object.create(null);
+  const startId = this._startModuleId; 
+  const businessStartId = this._businessId;
   let nextId = 0;
   return ({path: modulePath}) => {
     if (!(modulePath in fileToIdMap)) {
-      fileToIdMap[modulePath] = nextId;
+      let module_id_business = nextId;
+      if (startId > 0 && (module_id_business >= startId || module_id_business == 0)) {
+        module_id_business = module_id_business + businessStartId;
+      }
+      fileToIdMap[modulePath] = module_id_business;
       nextId += 1;
     }
     return fileToIdMap[modulePath];

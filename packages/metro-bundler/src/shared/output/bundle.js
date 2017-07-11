@@ -43,7 +43,10 @@ function createCodeWithMap(
     map: sourceMap,
   };
 }
-
+// created peanut
+function createBundleManifest(bundle) {
+  return JSON.stringify(bundle.getManifest(), null, 2);
+}
 function saveBundleAndMap(
   bundle: Bundle,
   options: OutputOptions,
@@ -75,7 +78,7 @@ function saveBundleAndMap(
     'binary');
   Promise.all([writeBundle, writeMetadata])
     .then(() => log('Done writing bundle output'));
-
+  const writeTasks = [writeBundle];
   if (sourcemapOutput) {
     log('Writing sourcemap output to:', sourcemapOutput);
     const map = typeof codeWithMap.map !== 'string'
@@ -83,10 +86,17 @@ function saveBundleAndMap(
       : codeWithMap.map;
     const writeMap = writeFile(sourcemapOutput, map, null);
     writeMap.then(() => log('Done writing sourcemap output'));
-    return Promise.all([writeBundle, writeMetadata, writeMap]);
-  } else {
-    return writeBundle;
+    writeTasks.push(writeMap);
   }
+  // peanut 增加输出 模块json 文件
+  if (manifestOutput) {
+    log('Writing manifest output to:', manifestOutput);
+    const manifest = createBundleManifest(bundle);
+    const writeManifest = writeFile(manifestOutput, manifest, null);
+    writeManifest.then(() => log('Done writing manifest output'));
+    writeTasks.push(writeManifest);
+  }
+  return Promise.all(writeTasks);
 }
 
 exports.build = buildBundle;

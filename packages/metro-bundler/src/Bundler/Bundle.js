@@ -319,6 +319,28 @@ class Bundle extends BundleBase {
   setRamGroups(ramGroups: ?Array<string>) {
     this._ramGroups = ramGroups;
   }
+  // 增加输出模块依赖表 for command peanut
+  getManifest() {
+    const modules = this.getModules();
+    const manifest = {
+      modules: {},
+      lastId: 0
+    }
+    modules.forEach(module => {
+      // Filter out polyfills and requireCalls
+      if (module.name && !module.isPolyfill && !module.isRequireCall) {
+        manifest.modules[module.name] = {
+          id: module.id
+        }
+      }
+      if (typeof module.id === 'number' && typeof manifest.lastId === 'number') {
+        manifest.lastId = Math.max(module.id, manifest.lastId)
+      } else {
+        manifest.lastId = module.id
+      }
+    });
+    return manifest;
+  }
 }
 
 function generateSourceMapForVirtualModule(module): MappingsMap {
