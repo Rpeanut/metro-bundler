@@ -862,17 +862,52 @@ function verifyRootExists(root) {
   assert(fs.statSync(root).isDirectory(), 'Root has to be a valid directory');
 }
 
+// 获取模块名称
+function getName(path) {
+  path = path.replace(/^.*[\/\\]node_modules[\///]/, '');
+  if (!path.indexOf('react-native/Libraries')) {
+    let pathArr = path.split('/');
+    const length = pathArr.length;
+    const hasPlatForm = (pathArr[length -1].includes('ios')) || 
+                                      (pathArr[length -1].includes('android'));
+    pathArr = pathArr[length - 1].split('.');
+    if (hasPlatForm) {
+      return pathArr[0];
+    } else {
+      return pathArr.slice(0,-1).join('.');
+    }
+  }
+  return path;
+}
 function createModuleIdFactory() {
   // peanut 在createModuleId时要保持其require时正确的依赖关系
   const fileToIdMap = Object.create(null);
+  // 共包最后模块 id + 1；
   const startId = this._startModuleId; 
+  // 业务起始 id
   const businessStartId = this._businessId;
+  // 公报模块
+  const extenalModules = this._extenalModules;
   let nextId = 0;
   return ({path: modulePath}) => {
     if (!(modulePath in fileToIdMap)) {
       let module_id_business = nextId;
-      if (startId > 0 && (module_id_business >= startId || module_id_business == 0)) {
-        module_id_business = module_id_business + businessStartId;
+      if (startId > 0) {
+        // 处理业务中的业务部分模块
+        if ((module_id_business >= startId) || (module_id_business == 0)) {
+           module_id_business += businessStartId;
+        } else {
+          // 处理业务包中共包模块，保证 id 与公报中的对应关系且多出的部分，打在业务bundle
+          const isExistModule = extenalModules[getName(modulePath)]
+          // 只处理增加的模块，减少的模块existModuleID暂不处理
+          if (!isExistModule) {
+            module_id_business += businessStartId;
+            nextId -= 1;
+          } else {
+            module_id_business = nextId = 
+                                      extenalModules[getName(modulePath)].id;
+          }
+        }
       }
       fileToIdMap[modulePath] = module_id_business;
       nextId += 1;
